@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能字幕流水线</title>
+    <style>
+        /* 现代化 SaaS 风格 CSS */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            width: 100%;
+            max-width: 450px;
+            border-top: 5px solid #ff9900; /* AWS 标志性橙色 */
+        }
+        h2 {
+            margin-top: 0;
+            color: #232f3e;
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+        }
+        input[type="file"],
+        input[type="email"],
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input[type="email"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #ff9900;
+        }
+        button {
+            width: 100%;
+            background-color: #ff9900;
+            color: white;
+            border: none;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #e88b00;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 25px;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 500;
+            background-color: #f9f9f9;
+            color: #666;
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>🎥 AI 字幕生成流水线</h2>
+        
+        <div class="form-group">
+            <label for="videoFile">1. 选择视频文件 (MP4/MOV):</label>
+            <input type="file" id="videoFile" accept="video/mp4,video/quicktime">
+        </div>
+
+        <div class="form-group">
+            <label for="targetLang">2. 目标翻译语言:</label>
+            <select id="targetLang">
+                <option value="zh">🇨🇳 翻译为中文 (Chinese)</option>
+                <option value="en">🇺🇸 翻译为英文 (English)</option>
+                <option value="ja">🇯🇵 翻译为日文 (Japanese)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="userEmail">3. 接收邮箱:</label>
+            <input type="email" id="userEmail" placeholder="you@example.com" required>
+        </div>
+
+        <button id="uploadBtn" onclick="uploadVideo()">安全上传并启动流水线</button>
+
+        <div id="status">系统已就绪，等待上传指令...</div>
+    </div>
+
+    <script>
+        // 【核心配置】将这里替换为你 API Gateway 的完整调用 URL
+        const API_URL = "https://0a2mcyzkmi.execute-api.us-east-1.amazonaws.com/dev/upload-url"; 
+
+        async function uploadVideo() {
+            const fileInput = document.getElementById('videoFile');
+            const emailInput = document.getElementById('userEmail').value.trim();
+            const langInput = document.getElementById('targetLang').value;
+            const statusDiv = document.getElementById('status');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            // 基础表单验证
+            if (fileInput.files.length === 0) {
+                alert('请先选择一个视频文件！');
+                return;
+            }
+            if (!emailInput) {
+                alert('请填写接收字幕的邮箱！');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            
+            // 锁定按钮，防止重复点击
+            uploadBtn.disabled = true;
+            uploadBtn.innerText = "处理中...";
+
+            statusDiv.innerText = "⏳ 状态: 正在向云端请求安全上传凭证...";
+            statusDiv.style.color = "#0056b3";
+            statusDiv.style.backgroundColor = "#e6f2ff";
+
+            try {
+                // 1. 请求 API Gateway 获取 Pre-signed URL
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // 🚀 核心修复：把当初我漏掉的这俩兄弟补进 Body 里！
+                    body: JSON.stringify({ 
+                        filename: encodeURIComponent(file.name),
+                        target_lang: langInput,  // 👉 告诉后端我选了什么语言
+                        email: emailInput        // 👉 告诉后端我的邮箱
+                    })
+                });
+
+                if (!response.ok) throw new Error("获取凭证失败，请检查 API Gateway 跨域配置。");
+
+                const data = await response.json();
+                const uploadUrl = data.upload_url;
+
+                statusDiv.innerText = `⏳ 状态: 凭证获取成功！正在通过专线直传至 S3 存储桶...`;
+
+                // 2. 使用 PUT 方法直接将文件上传到 S3，附带自定义元数据魔法标签
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'video/mp4'
+                    },
+                    body: file
+                });
+
+                if (uploadResponse.ok) {
+                    statusDiv.innerText = `🎉 状态: 上传成功！云端 AI 流水线已自动激活。`;
+                    statusDiv.style.color = "green";
+                } else {
+                    // 🚀 强行读取 S3 返回的底层 XML 错误报文
+                    const errorXml = await uploadResponse.text();
+                    console.error("🚨 S3 死亡回执 (XML):", errorXml);
+                    throw new Error(`S3 拒绝写入 (状态码: ${uploadResponse.status})。请按 F12 打开控制台查看红色 XML 报错详情！`);
+                }
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "❌ 状态: 发生错误 - " + error.message;
+                statusDiv.style.color = "#721c24";
+                statusDiv.style.backgroundColor = "#f8d7da";
+            } finally {
+                // 无论成功失败，恢复按钮状态
+                uploadBtn.disabled = false;
+                uploadBtn.innerText = "安全上传并启动流水线";
+            }
+        }
+    </script>
+</body>
+</html>
