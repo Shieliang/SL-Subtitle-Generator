@@ -11,7 +11,7 @@
           "MediaFileUri.$": "$.video_s3_uri"
         },
         "IdentifyLanguage": true,
-        "OutputBucketName": "sl-subtitle-generator-output-bucket"
+        "OutputBucketName": "<YOUR_OUTPUT_BUCKET_NAME>"
       },
       "ResultPath": "$.transcribe_status",
       "Next": "Wait10Seconds",
@@ -114,7 +114,7 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::aws-sdk:lambda:invoke",
       "Parameters": {
-        "FunctionName": "arn:aws:lambda:us-east-1:987762561422:function:SL-Subtitle-Generator-Translate-Function",
+        "FunctionName": "arn:aws:lambda:<YOUR_REGION>:<YOUR_ACCOUNT_ID>:function:SL-Subtitle-Generator-Translate-Function",
         "Payload.$": "$"
       },
       "OutputPath": "$.Payload",
@@ -133,7 +133,7 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::aws-sdk:lambda:invoke",
       "Parameters": {
-        "FunctionName": "arn:aws:lambda:us-east-1:987762561422:function:SL-Subtitle-Generator-Format-Subtitle-Function",
+        "FunctionName": "arn:aws:lambda:<YOUR_REGION>:<YOUR_ACCOUNT_ID>:function:SL-Subtitle-Generator-Format-Subtitle-Function",
         "Payload.$": "$"
       },
       "OutputPath": "$.Payload",
@@ -153,7 +153,7 @@
       "Comment": "终点大结局：调用精美 HTML 发信微服务",
       "Resource": "arn:aws:states:::aws-sdk:lambda:invoke",
       "Parameters": {
-        "FunctionName": "arn:aws:lambda:us-east-1:987762561422:function:SL-Subtitle-Generator-SES-Function",
+        "FunctionName": "arn:aws:lambda:<YOUR_REGION>:<YOUR_ACCOUNT_ID>:function:SL-Subtitle-Generator-SES-Function",
         "Payload.$": "$"
       },
       "OutputPath": "$.Payload",
@@ -173,7 +173,7 @@
       "Comment": "核心终点站：全自动提取动态错误类型与致命死因",
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
-        "TopicArn": "arn:aws:sns:us-east-1:987762561422:SL-Subtitle-Generator-Error-SNS",
+        "TopicArn": "arn:aws:sns:<YOUR_REGION>:<YOUR_ACCOUNT_ID>:<YOUR_SNS_TOPIC_NAME>",
         "Message.$": "States.Format('🚨 [Subtitle Pipeline 严重告警]\n\n任务名称: {}\n目标语言: {}\n\n【异常类别】: {}\n【核心死因】: {}', $.job_name, $.target_lang, $.error_info.Error, $.error_info.Cause)"
       },
       "End": true
