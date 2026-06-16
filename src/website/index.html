@@ -44,6 +44,7 @@
         }
         input[type="file"],
         input[type="email"],
+        input[type="text"],
         select {
             width: 100%;
             padding: 10px;
@@ -54,6 +55,7 @@
             transition: border-color 0.3s;
         }
         input[type="email"]:focus,
+        input[type="text"]:focus,
         select:focus {
             outline: none;
             border-color: #ff9900;
@@ -102,6 +104,7 @@
         <div class="form-group">
             <label for="videoFile">1. 选择视频文件 (MP4/MOV):</label>
             <input type="file" id="videoFile" accept="video/mp4,video/quicktime">
+            <small style="color: #d9534f; display: block; margin-top: 5px;">*演示环境限定：视频时长不可超过 15 秒，以控制转录成本</small>
         </div>
 
         <div class="form-group">
@@ -118,6 +121,11 @@
             <input type="email" id="userEmail" placeholder="you@example.com" required>
         </div>
 
+        <div class="form-group">
+            <label for="inviteCode">4. 专属邀请码 (Invite Code):</label>
+            <input type="text" id="inviteCode" placeholder="例如: HireMe2026" required>
+        </div>
+
         <button id="uploadBtn" onclick="uploadVideo()">安全上传并启动流水线</button>
 
         <div id="status">系统已就绪，等待上传指令...</div>
@@ -127,30 +135,60 @@
         // 【核心配置】将这里替换为你 API Gateway 的完整调用 URL
         const API_URL = "https://0a2mcyzkmi.execute-api.us-east-1.amazonaws.com/dev/upload-url"; 
 
+        const fileInput = document.getElementById('videoFile');
+        const uploadBtn = document.getElementById('uploadBtn');
+
+        // 🛡️ 防线一：在用户选择文件时，立即进行 15 秒时长硬拦截
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+
+            video.onloadedmetadata = function() {
+                window.URL.revokeObjectURL(video.src); // 释放内存
+                const duration = video.duration;
+                console.log(`[时长检测] 当前视频时长: ${duration.toFixed(2)} 秒`);
+
+                if (duration > 15) {
+                    alert('🛑 触发算力保护机制：\n当前演示版仅支持 15 秒以内的视频！\n请裁剪后重新选择。');
+                    fileInput.value = ''; // 清空已选择的文件
+                    uploadBtn.disabled = true; // 锁定上传按钮
+                } else {
+                    uploadBtn.disabled = false; // 时长合格，解锁按钮
+                }
+            }
+            video.src = URL.createObjectURL(file);
+        });
+
         async function uploadVideo() {
-            const fileInput = document.getElementById('videoFile');
             const emailInput = document.getElementById('userEmail').value.trim();
             const langInput = document.getElementById('targetLang').value;
+            const inviteCodeInput = document.getElementById('inviteCode').value.trim();
             const statusDiv = document.getElementById('status');
-            const uploadBtn = document.getElementById('uploadBtn');
 
             // 基础表单验证
             if (fileInput.files.length === 0) {
-                alert('请先选择一个视频文件！');
+                alert('请先选择一个不超过 15 秒的视频文件！');
                 return;
             }
             if (!emailInput) {
                 alert('请填写接收字幕的邮箱！');
                 return;
             }
+            if (!inviteCodeInput) {
+                alert('系统受保护，请输入专属邀请码！');
+                return;
+            }
 
             const file = fileInput.files[0];
             
-            // 锁定按钮，防止重复点击
+            // 锁定按钮，防止重复点击并发刷单
             uploadBtn.disabled = true;
             uploadBtn.innerText = "处理中...";
 
-            statusDiv.innerText = "⏳ 状态: 正在向云端请求安全上传凭证...";
+            statusDiv.innerText = "⏳ 状态: 正在校验邀请码并请求安全上传凭证...";
             statusDiv.style.color = "#0056b3";
             statusDiv.style.backgroundColor = "#e6f2ff";
 
@@ -159,22 +197,27 @@
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // 🚀 核心修复：把当初我漏掉的这俩兄弟补进 Body 里！
                     body: JSON.stringify({ 
                         filename: encodeURIComponent(file.name),
-                        target_lang: langInput,  // 👉 告诉后端我选了什么语言
-                        email: emailInput        // 👉 告诉后端我的邮箱
+                        target_lang: langInput,  
+                        email: emailInput,
+                        invite_code: inviteCodeInput // 🚀 防线二：将邀请码送入云端 Lambda 进行数据库校验
                     })
                 });
 
-                if (!response.ok) throw new Error("获取凭证失败，请检查 API Gateway 跨域配置。");
+                // 🎯 精确捕获 DynamoDB/Lambda 判定返回的 403 拒绝信息
+                if (response.status === 403) {
+                    throw new Error("❌ 邀请码无效，或该邀请码已达到使用上限！");
+                } else if (!response.ok) {
+                    throw new Error("获取凭证失败，请检查 API Gateway 服务状态。");
+                }
 
                 const data = await response.json();
                 const uploadUrl = data.upload_url;
 
-                statusDiv.innerText = `⏳ 状态: 凭证获取成功！正在通过专线直传至 S3 存储桶...`;
+                statusDiv.innerText = `⏳ 状态: 邀请码验证通过！正在通过专线直传至 S3...`;
 
-                // 2. 使用 PUT 方法直接将文件上传到 S3，附带自定义元数据魔法标签
+                // 2. 使用 PUT 方法直接将文件上传到 S3
                 const uploadResponse = await fetch(uploadUrl, {
                     method: 'PUT',
                     headers: { 
@@ -184,18 +227,17 @@
                 });
 
                 if (uploadResponse.ok) {
-                    statusDiv.innerText = `🎉 状态: 上传成功！云端 AI 流水线已自动激活。`;
+                    statusDiv.innerText = `🎉 状态: 上传成功！云端 AI 流水线已自动激活，请稍后检查邮箱。`;
                     statusDiv.style.color = "green";
                 } else {
-                    // 🚀 强行读取 S3 返回的底层 XML 错误报文
                     const errorXml = await uploadResponse.text();
                     console.error("🚨 S3 死亡回执 (XML):", errorXml);
-                    throw new Error(`S3 拒绝写入 (状态码: ${uploadResponse.status})。请按 F12 打开控制台查看红色 XML 报错详情！`);
+                    throw new Error(`S3 拒绝写入 (状态码: ${uploadResponse.status})。请按 F12 查看控制台详情！`);
                 }
 
             } catch (error) {
                 console.error(error);
-                statusDiv.innerText = "❌ 状态: 发生错误 - " + error.message;
+                statusDiv.innerText = error.message; // 直接展示我们抛出的高亮错误信息
                 statusDiv.style.color = "#721c24";
                 statusDiv.style.backgroundColor = "#f8d7da";
             } finally {
