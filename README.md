@@ -4,7 +4,7 @@
 ![Serverless](https://img.shields.io/badge/Serverless-FCC624?style=for-the-badge&logo=serverless&logoColor=black) 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 
-An event-driven, serverless subtitle generation and translation pipeline built on AWS. Designed and implemented as a production-ready proof-of-concept emphasizing security, reliability, and cost efficiency.
+A web application for uploading MP4 videos and generating subtitle `.srt` files, with optional translation into English, Chinese, and Japanese. Built as a polished proof-of-concept with attention to security, reliability, and cost efficiency.
 
 **Role:** Sole creator, assisted by Gemini
 
